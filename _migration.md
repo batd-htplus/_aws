@@ -2,7 +2,7 @@
 
 > **Mục tiêu**: Giải quyết các vấn đề tích hợp database khi migrate **DB Core (tvmk06)** sang PostgreSQL trên AWS, trong khi **DB P+ / PLASURM+ (tvmk02, tvmk03, tvmk05)** vẫn được **giữ nguyên hoàn toàn trên on-premises**.
 
-**Mapping với source hiện tại (dựa trên sơ đồ AS-IS):**
+**Mapping với source hiện tại:**
 
 | Thành phần          | Trong repo / thực tế hiện tại                                      |
 |---------------------|---------------------------------------------------------------------|
@@ -30,7 +30,7 @@
 | PLASURM Domain | On-Prem SQL Server (`tvmk02/tvmk03/tvmk05`) | On-Prem only | On-Prem |
 | `tvmk06` Replica | No ownership (compatibility replica) | CDC Sink account only | `tvmk02` (read-only via DB link/synonym) |
 
-**Một dòng kiến trúc tổng quát (final):**
+**Kiến trúc tổng quát:**
 `AWS Core PostgreSQL (source of truth) -> Replication runtime on AWS (Debezium/MSK/Sink) -> tvmk06 SQL Server 2012 (replica sink) -> tvmk02 query via DB link/synonym`
 
 ---
@@ -104,6 +104,7 @@
 | **Tổng chi phí phát sinh** | **≈ 76 USD/tháng**            |
 
 **Lưu ý**: Chi phí có thể giảm thêm khi dùng MSK Serverless hoặc tối ưu instance.
+
 **Lưu ý phạm vi chi phí**: Chưa bao gồm chi phí Direct Connect/VPN, data transfer liên vùng/egress và chi phí nhân sự vận hành (Ops).
 
 ---
@@ -120,8 +121,6 @@ Với thiết kế này:
   - Giảm rủi ro thay đổi hệ legacy.
   - Cô lập write authority về AWS Core.
   - Chấp nhận eventual consistency có kiểm soát bằng SLA + monitoring + reconciliation.
-
-Chúng tôi sẵn sàng đính kèm sơ đồ AS-IS (hình bạn gửi), thực hiện PoC hoặc điều chỉnh thêm theo yêu cầu.
 
 # Tổng quan:
 
@@ -302,7 +301,6 @@ Local Shared Folder > tvmk02: import CSV after validation
 | Schema thay đổi từ Core AWS nhưng chưa rollout xuống `tvmk06` | Cao | Connector lỗi hàng loạt, dừng đồng bộ | Quản trị schema bằng change pipeline bắt buộc (migrate script + kiểm tra tương thích) |
 | Tắc nghẽn/lock trên `tvmk06` khi vừa đọc nhiều từ `tvmk02` vừa ghi replicate | Cao | Query chậm, timeout nghiệp vụ | Tuning index, batch size, isolation level; tách khung giờ bulk load |
 | Không có cơ chế đối soát dữ liệu định kỳ | Cao | Sai lệch âm thầm khó phát hiện | Chạy reconciliation hằng ngày (count/checksum theo partition key) |
-| Quyền truy cập rộng quá mức | Trung bình | Rủi ro bảo mật và thao tác nhầm | Principle of least privilege, rotate secret định kỳ, audit truy cập |
 | Thiếu kế hoạch rollback | Rất cao | Sự cố kéo dài, ảnh hưởng nghiệp vụ | Chuẩn bị sẵn snapshot/mốc dữ liệu + kịch bản quay lui trong 30-60 phút |
 
 ### 3.3 Failure Scenario: CDC bị dừng/chết thì sao?
@@ -366,9 +364,3 @@ Local Shared Folder > tvmk02: import CSV after validation
 - 0 luồng batch/import cần bridge này.
 - Hoàn tất vận hành ổn định tối thiểu 2 chu kỳ nghiệp vụ lớn không cần `tvmk06`.
 
-### Governance Gate (điều kiện chuyển phase)
-
-- Chỉ chuyển phase khi có đủ:
-  - Sign-off của Business Owner.
-  - Sign-off của Infra/DBA.
-  - Tối thiểu 2 chu kỳ nghiệp vụ production liên tiếp không lỗi trọng yếu.
