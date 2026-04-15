@@ -202,7 +202,7 @@ Local Shared Folder > tvmk02: import CSV after validation
 - Luồng CSV một chiều: `CSV Export Job (daily 01:00) -> S3 + SQS -> Integration Agent (SQS long polling) -> checksum verify + atomic write -> tvmk02 import`.
 - Không sử dụng Outbox trong phạm vi thiết kế hiện tại để giảm độ phức tạp.
 
-**Quy tắc vận hành đi kèm biểu đồ**
+**Quy tắc vận hành**
 - `core` trên AWS là **source of truth** cho domain Core.
 - `tvmk06` là **compatibility bridge** cho PLASURM đọc theo cơ chế cũ.
 - Account nghiệp vụ on-prem phải **read-only** trên vùng bảng replicated ở `tvmk06`.
