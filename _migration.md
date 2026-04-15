@@ -106,6 +106,9 @@ Chúng tôi sẵn sàng đính kèm sơ đồ AS-IS (hình bạn gửi), thực 
 # Tổng quan:
 
 **Biểu đồ tổng quan (diagram-as-code)**
+![AWS](diagram-export-4-15-2026-9_18_48-PM.png)
+
+
 ```text
 // On-Premises Environment
 "On-Premises" [color: gray, icon: server] {
@@ -230,12 +233,3 @@ Local Shared Folder > tvmk02: import CSV after validation
 | Không có cơ chế đối soát dữ liệu định kỳ | Cao | Sai lệch âm thầm khó phát hiện | Chạy reconciliation hằng ngày (count/checksum theo partition key) |
 | Quyền truy cập rộng quá mức | Trung bình | Rủi ro bảo mật và thao tác nhầm | Principle of least privilege, rotate secret định kỳ, audit truy cập |
 | Thiếu kế hoạch rollback | Rất cao | Sự cố kéo dài, ảnh hưởng nghiệp vụ | Chuẩn bị sẵn snapshot/mốc dữ liệu + kịch bản quay lui trong 30-60 phút |
-
-### 3.3 Checklist tối thiểu trước Cutover
-
-- Hoàn tất test kết nối mạng và xác nhận mở port theo đúng chiều lưu lượng.
-- Xác nhận toàn bộ synonym/DB link từ `tvmk02` sang `tvmk06` vẫn truy vấn OK.
-- Xác nhận các chức năng ghi từ PLASURM vào bảng replica đã được chặn/chuyển luồng.
-- Chạy đối soát dữ liệu ít nhất 2 chu kỳ nghiệp vụ liên tiếp (không chỉ test một lần).
-- Đạt ngưỡng SLA vận hành: lag replication, tỷ lệ lỗi, thời gian phục hồi khi restart pipeline.
-- Có quyết định Go/No-Go và người phê duyệt thuộc cả 3 bên: App, DBA, Infra.
