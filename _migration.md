@@ -125,7 +125,7 @@ Với thiết kế này:
 # Tổng quan:
 
 **Biểu đồ tổng quan (diagram-as-code)**
-![AWS](diagram-export-4-15-2026-9_18_48-PM.png)
+![AWS](diagram-export-4-16-2026-9_06_43-AM.png)
 
 
 ```text
