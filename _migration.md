@@ -1,6 +1,6 @@
-# T-SCRUM AWS Migration: Giải Pháp Tích Hợp Database
+# AWS Migration: Giải Pháp Tích Hợp Database
 
-> **Mục tiêu**: Giải quyết các vấn đề tích hợp database khi migrate **DB Core (tvmk06)** sang PostgreSQL trên AWS, trong khi **DB P+ / PLASURM+ (tvmk02, tvmk03, tvmk05)** vẫn được **giữ nguyên hoàn toàn trên on-premises**.
+> **Mục tiêu**: Giải quyết các vấn đề tích hợp database khi migrate **DB Core (tvmk06)** sang PostgreSQL trên AWS, trong khi **DB P+ / PSM+ (tvmk02, tvmk03, tvmk05)** vẫn được **giữ nguyên hoàn toàn trên on-premises**.
 
 **Mapping với source hiện tại:**
 
@@ -8,7 +8,7 @@
 |---------------------|---------------------------------------------------------------------|
 | Ứng dụng            | Java + Tomcat + yhFramework (servlets, online batch, scheduler)   |
 | DB Core             | **`tvmk06`** (Core System) → Migrate toàn bộ lên PostgreSQL trên AWS |
-| DB P+ / PLASURM+    | **`tvmk02`** (Plasurm+ chính), tvmk03 (FW/Common), tvmk05 (Work/Batch) → **Giữ nguyên** trên SQL Server on-premises |
+| DB P+ / PSM+    | **`tvmk02`** (PSM+ chính), tvmk03 (FW/Common), tvmk05 (Work/Batch) → **Giữ nguyên** trên SQL Server on-premises |
 | Vai trò tvmk06 sau migrate | Chỉ còn là **DB replica/read-side on-prem** nhận đồng bộ từ AWS (không còn là DB xử lý chính) |
 
 **Nguyên tắc thiết kế quan trọng:**
@@ -27,7 +27,7 @@
 | Domain / Schema | System of Record | Allowed Write Location | Read Location |
 |-----------------|------------------|------------------------|--------------|
 | Core Domain | AWS PostgreSQL | AWS only | AWS + `tvmk06` (replica) |
-| PLASURM Domain | On-Prem SQL Server (`tvmk02/tvmk03/tvmk05`) | On-Prem only | On-Prem |
+| PSM Domain | On-Prem SQL Server (`tvmk02/tvmk03/tvmk05`) | On-Prem only | On-Prem |
 | `tvmk06` Replica | No ownership (compatibility replica) | CDC Sink account only | `tvmk02` (read-only via DB link/synonym) |
 
 **Kiến trúc tổng quát:**
@@ -39,7 +39,7 @@
 
 ### Giải Pháp 1: Debezium CDC + Change Stream (Đồng bộ DB Core từ AWS xuống tvmk06)
 
-**Mục đích**: Giữ cơ chế Linked Server + Synonym hiện tại cho PLASURM, đồng thời đổi nguồn dữ liệu chính sang AWS.
+**Mục đích**: Giữ cơ chế Linked Server + Synonym hiện tại cho PSM, đồng thời đổi nguồn dữ liệu chính sang AWS.
 
 **Kiến trúc cốt lõi**:
 - DB Core mới → **Migrate full** sang RDS PostgreSQL trên AWS và trở thành **source of truth**.
@@ -51,11 +51,11 @@
 2. **Debezium Source Connector** thực hiện **Initial Snapshot** (full load) từ AWS Core.
 3. Debezium connector liên tục capture thay đổi (INSERT/UPDATE/DELETE) và đẩy events vào Amazon MSK (Kafka).
 4. Sink connector nhận events và **upsert** vào SQL Server `tvmk06` (schema tương thích với synonym hiện tại).
-5. PLASURM (`tvmk02`) tiếp tục truy vấn `tvmk06` qua DB link/synonym như trước, không phải đổi lớn ở tầng ứng dụng cũ.
+5. PSM (`tvmk02`) tiếp tục truy vấn `tvmk06` qua DB link/synonym như trước, không phải đổi lớn ở tầng ứng dụng cũ.
 
 **Lợi ích chính:**
 - AWS Core trở thành nguồn dữ liệu chính, tách khỏi ràng buộc on-prem.
-- Giữ nguyên cơ chế truy vấn cũ của PLASURM qua `tvmk02` -> `tvmk06`.
+- Giữ nguyên cơ chế truy vấn cũ của PSM qua `tvmk02` -> `tvmk06`.
 - Giảm rủi ro sửa code lớn ở hệ thống legacy trong giai đoạn chuyển tiếp.
 - Có thể mở rộng event stream cho audit, reconciliation, observability.
 
@@ -79,9 +79,9 @@
 2. Upload CSV + checksum `.sha256` lên Amazon S3.
 3. Gửi message qua Amazon SQS.
 4. Integration Agent (on-prem) nhận message qua **SQS long polling**, tải file từ S3, kiểm tra checksum và ghi atomic vào thư mục cục bộ.
-5. PLASURM+ (tvmk02) tiếp tục import như cũ.
+5. PSM+ (tvmk02) tiếp tục import như cũ.
 
-**Lợi ích**: Giữ nguyên logic PLASURM+ mà không cần mount shared folder từ AWS.
+**Lợi ích**: Giữ nguyên logic PSM+ mà không cần mount shared folder từ AWS.
 
 **Rủi ro & Biện pháp giảm thiểu:**
 | Rủi ro                              | Mức độ | Biện pháp giảm thiểu                              |
@@ -134,15 +134,15 @@ Với thiết kế này:
 
   // Application Layer (On-Prem)
   On-Prem Application [icon: layers] {
-    Tomcat PLASURM [icon: server, label: "PLASURM"]
+    Tomcat PSM [icon: server, label: "PSM"]
   }
 
   DB Core Replica [icon: database] {
     "tvmk06 On-Prem" [icon: azure-sql-database, label: "tvmk06 (Replica Bridge for P+)"]
   }
 
-  DB P+ PLASURM+ [icon: database, color: blue] {
-    tvmk02 [icon: azure-sql-database, label: "tvmk02 (Plasurm+)"]
+  DB P+ PSM+ [icon: database, color: blue] {
+    tvmk02 [icon: azure-sql-database, label: "tvmk02 (PSM+)"]
     tvmk03 [icon: azure-sql-database, label: "tvmk03 (FW/Common)"]
     tvmk05 [icon: azure-sql-database, label: "tvmk05 (Work/Batch)"]
   }
@@ -174,7 +174,7 @@ AWS Cloud [color: orange, icon: aws] {
   }
 }
 
-// Core -> PLASURM one-way replication
+// Core -> PSM one-way replication
 Core Schema --> Debezium Source: capture changes in AWS
 Debezium Source > MSK Kafka: change events
 MSK Kafka > Sink Connector: consume events
@@ -198,13 +198,13 @@ Local Shared Folder > tvmk02: import CSV after validation
 
 **Luồng chính**
 - Luồng chính: `AWS core(PostgreSQL) -> Debezium CDC Runtime(AWS) -> tvmk06(SQL Server 2012 replica bridge)`.
-- Luồng truy vấn legacy: `tvmk02/PLASURM -> DB link/synonym -> tvmk06`.
+- Luồng truy vấn legacy: `tvmk02/PSM -> DB link/synonym -> tvmk06`.
 - Luồng CSV một chiều: `CSV Export Job (daily 01:00) -> S3 + SQS -> Integration Agent (SQS long polling) -> checksum verify + atomic write -> tvmk02 import`.
 - Không sử dụng Outbox trong phạm vi thiết kế hiện tại để giảm độ phức tạp.
 
 **Quy tắc vận hành**
 - `core` trên AWS là **source of truth** cho domain Core.
-- `tvmk06` là **compatibility bridge** cho PLASURM đọc theo cơ chế cũ.
+- `tvmk06` là **compatibility bridge** cho PSM đọc theo cơ chế cũ.
 - Account nghiệp vụ on-prem phải **read-only** trên vùng bảng replicated ở `tvmk06`.
 - Chỉ replication sink account được phép ghi vào vùng replicated trên `tvmk06`.
 
@@ -212,7 +212,7 @@ Local Shared Folder > tvmk02: import CSV after validation
 
 ## PHẦN 3: ĐIỀU KIỆN CẦN & RISK CHO PHƯƠNG ÁN GIỮ DB LINK
 
-> **Phương án áp dụng**: Giữ cơ chế DB Link/Synonym hiện tại cho PLASURM (`tvmk02` -> `tvmk06`), nhưng đổi vai trò `tvmk06` thành DB replica nhận dữ liệu một chiều từ AWS PostgreSQL.
+> **Phương án áp dụng**: Giữ cơ chế DB Link/Synonym hiện tại cho PSM (`tvmk02` -> `tvmk06`), nhưng đổi vai trò `tvmk06` thành DB replica nhận dữ liệu một chiều từ AWS PostgreSQL.
 
 ### 3.0 CDC nằm ở đâu? SQL Server 2012 cần cài gì?
 
@@ -225,9 +225,9 @@ Local Shared Folder > tvmk02: import CSV after validation
 ### 3.0.1 Consistency Model (bắt buộc công bố cho business)
 
 - Mô hình dữ liệu giữa AWS Core và `tvmk06` là **Eventual Consistency** (asynchronous replication).
-- **Không đảm bảo read-after-write tức thì** ở phía PLASURM (`tvmk02` đọc qua `tvmk06`).
+- **Không đảm bảo read-after-write tức thì** ở phía PSM (`tvmk02` đọc qua `tvmk06`).
 - SLA replication lag mục tiêu: **< 30 giây** trong trạng thái vận hành bình thường.
-- Khi lag vượt SLA, hệ thống vẫn chạy nhưng dữ liệu ở PLASURM có thể trễ so với AWS Core.
+- Khi lag vượt SLA, hệ thống vẫn chạy nhưng dữ liệu ở PSM có thể trễ so với AWS Core.
 
 ### 3.0.2 Recovery Objective
 
@@ -238,7 +238,7 @@ Local Shared Folder > tvmk02: import CSV after validation
 
 - Thứ tự thay đổi trong cùng một transaction PostgreSQL được bảo toàn trên stream.
 - Không đảm bảo atomic multi-table read consistency tức thì tại replica `tvmk06`.
-- PLASURM không được giả định strong consistency cho query join nhiều bảng vừa cập nhật.
+- PSM không được giả định strong consistency cho query join nhiều bảng vừa cập nhật.
 
 ### 3.1 Điều kiện cần để triển khai
 
@@ -250,10 +250,10 @@ Local Shared Folder > tvmk02: import CSV after validation
 | Runtime Integration Agent (on-prem) | Cài AWS SDK/client cho S3 + SQS, bật TLS, cấu hình SQS long polling | Khuyến nghị `WaitTimeSeconds=20` để giảm số lần quét |
 | IAM quyền tối thiểu cho Agent | Cấp `sqs:ReceiveMessage/DeleteMessage/ChangeMessageVisibility` và `s3:GetObject` (thêm `ListBucket` nếu cần) | Dùng credential ngắn hạn/rotation, không hardcode access key |
 | Cấu hình SQL Server `tvmk06` | Bật chế độ nhận upsert từ pipeline (JDBC sink/agent), tối ưu index theo key đồng bộ, đủ log file | Kiểm soát lock escalation để tránh ảnh hưởng truy vấn từ `tvmk02` |
-| Read-Only Contract cho schema replicate trên `tvmk06` | Bắt buộc enforce permission ở DB level: `REVOKE INSERT/UPDATE/DELETE`, chỉ `GRANT SELECT` cho user PLASURM (`tvmk02`) | Tránh hot-fix ghi trực tiếp làm phá consistency |
+| Read-Only Contract cho schema replicate trên `tvmk06` | Bắt buộc enforce permission ở DB level: `REVOKE INSERT/UPDATE/DELETE`, chỉ `GRANT SELECT` cho user PSM (`tvmk02`) | Tránh hot-fix ghi trực tiếp làm phá consistency |
 | Lock strategy cho SQL Server 2012 | Bật `READ_COMMITTED_SNAPSHOT ON`, sink batch size nhỏ (`100-500`), index đầy đủ theo business key/upsert key | Giảm blocking ngẫu nhiên khi vừa đọc vừa replicate |
 | Cấu hình PostgreSQL AWS | Bật logical replication/CDC theo công nghệ chọn, có user chỉ đọc CDC stream | Tách quyền rõ ràng: user app và user CDC |
-| Giữ tương thích schema | Bảng/cột/index/collation trên `tvmk06` phải giữ contract cũ để synonym/query từ `tvmk02` chạy được | Đây là điều kiện sống còn để không sửa nhiều code PLASURM |
+| Giữ tương thích schema | Bảng/cột/index/collation trên `tvmk06` phải giữ contract cũ để synonym/query từ `tvmk02` chạy được | Đây là điều kiện sống còn để không sửa nhiều code PSM |
 | Phân quyền DB Link/Synonym | `tvmk02` vẫn truy vấn được object synonym trỏ sang `tvmk06`; không đổi tên object đột ngột | Chuẩn bị script verify sau cutover |
 | Quan trắc & cảnh báo CDC | Dashboard bắt buộc gồm `replication delay (seconds)`, `Kafka consumer lag`, `sink throughput`, `error rate` | Alert theo ngưỡng: warning `>30s`, critical `>300s` |
 | Quy trình vận hành | Có runbook: restart connector, re-sync từng bảng, rollback về snapshot trước cutover | Có đầu mối trách nhiệm rõ (Infra/DBA/App) |
@@ -292,7 +292,7 @@ Local Shared Folder > tvmk02: import CSV after validation
 
 | Risk | Mức độ | Tác động | Biện pháp xử lý |
 |------|--------|----------|-----------------|
-| PLASURM vẫn ghi vào các bảng đang coi là replica (`TM_KWSRT`, `TW_SGJSKRNKI`, `TW_SYHJSKRNKI`, `TT_TVMKURGSWK`...) | Rất cao | Xung đột dữ liệu hai chiều, mất nhất quán | Khóa chức năng ghi tương ứng hoặc tách riêng bảng ghi nghiệp vụ trước cutover |
+| PSM vẫn ghi vào các bảng đang coi là replica (`TM_KWSRT`, `TW_SGJSKRNKI`, `TW_SYHJSKRNKI`, `TT_TVMKURGSWK`...) | Rất cao | Xung đột dữ liệu hai chiều, mất nhất quán | Khóa chức năng ghi tương ứng hoặc tách riêng bảng ghi nghiệp vụ trước cutover |
 | Replication lag cao giờ cao điểm | Cao | `tvmk02` đọc dữ liệu trễ so với Core AWS | Thiết lập SLA lag, autoscale connector, tăng partition/throughput, cảnh báo sớm |
 | Mismatch kiểu dữ liệu/collation PostgreSQL -> SQL Server | Cao | Lỗi insert/update, sai so sánh chuỗi tiếng Nhật | Định nghĩa mapping chuẩn từng cột, test full regression theo bảng trọng yếu |
 | Identity/Sequence drift giữa PostgreSQL và SQL Server | Cao | Insert fail hoặc key mismatch | Không để SQL Server tự generate identity cho bảng replicate; replicate full value từ source; tắt/khóa auto increment ở target replicate |
@@ -307,8 +307,8 @@ Local Shared Folder > tvmk02: import CSV after validation
 
 - Nếu Debezium/MSK/Sink dừng:
   - AWS PostgreSQL Core vẫn xử lý transaction bình thường.
-  - PLASURM vẫn đọc được dữ liệu cũ trên `tvmk06`.
-  - Hệ thống **không outage**, chỉ **thiếu cập nhật mới** sang phía PLASURM.
+  - PSM vẫn đọc được dữ liệu cũ trên `tvmk06`.
+  - Hệ thống **không outage**, chỉ **thiếu cập nhật mới** sang phía PSM.
 - Đây là trạng thái **degraded eventual consistency**, không phải sập toàn hệ thống.
 - Runbook bắt buộc:
   1. Restart connector/runtime.
@@ -349,14 +349,14 @@ Local Shared Folder > tvmk02: import CSV after validation
 1. **Phase 1 – Compatibility Bridge**
    - Giữ `tvmk02 -> tvmk06` qua DB link/synonym.
    - AWS Core replicate một chiều xuống `tvmk06`.
-2. **Phase 2 – Refactor PLASURM Query Dependency**
+2. **Phase 2 – Refactor PSM Query Dependency**
    - Giảm dần phụ thuộc query chéo qua bridge (theo module/bảng).
    - Chuẩn hóa interface thay cho truy vấn xuyên DB khi khả thi.
 3. **Phase 3 – Remove DB Link/Synonym**
    - Gỡ dần synonym/linked dependency đã thay thế xong.
    - Xác nhận không còn luồng nghiệp vụ bắt buộc qua `tvmk06`.
 4. **Phase 4 – Decommission `tvmk06`**
-   - Thực hiện khi PLASURM không còn phụ thuộc bridge (hoặc PLASURM được nâng cấp/move theo kiến trúc mới, bao gồm khả năng đưa workload lên AWS nếu phù hợp).
+   - Thực hiện khi PSM không còn phụ thuộc bridge (hoặc PSM được nâng cấp/move theo kiến trúc mới, bao gồm khả năng đưa workload lên AWS nếu phù hợp).
 
 ### Exit Criteria trước khi bỏ `tvmk06`
 
